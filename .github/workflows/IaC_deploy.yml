@@ -1,0 +1,93 @@
+name: 'Deploy/update infrastructure '
+
+on:
+  push:
+    branches:
+    - none
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: environment
+        description: Select the environment
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
+    - name: HashiCorp - Setup Terraform
+      uses: hashicorp/setup-terraform@v1.2.1
+      
+    - name: Verify Terraform version
+      run: terraform --version
+      
+    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: Terraform Init
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+
+          cd terraform && terraform init -migrate-state -input=false
+          if  terraform workspace new ${{ inputs.environment }}
+          then 
+          echo Workspace created
+          else
+          echo workspace already exists
+          fi
+    # Generates an execution plan for Terraform
+    - name: Terraform Init Upgrade
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+          cd terraform \
+          && terraform workspace select ${{ inputs.environment }} \
+          && terraform init -upgrade
+
+    - name: Terraform Plan
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+          cd terraform \
+          && terraform workspace select ${{ inputs.environment }} \
+          && terraform plan \
+          -var "aws_region=${{ secrets.AWS_REGION }}" \
+          -var "eks_cluster_ec2_instance_type=${{ secrets.EKS_CLUSTER_EC2_INSTANCE_TYPE }}" \
+          -var "eks_vpc_security_group_id=${{ secrets.EKS_VPC_SECURITY_GROUP_ID }}" \
+          -var "node_group_autoscaling_policy_arn=${{ secrets.NODE_GROUP_AUTOSCALING_POLICY_ARN }}" \
+          -var "eks_cluster_name=${{ secrets.EKS_CLUSTER_NAME }}" \
+          -var "vpc_cidr_block=[\"${{ secrets.VPC_CIDR_BLOCK }}\"]" \
+          -var "vpc_id=${{ secrets.VPC_ID }}" \
+          -var "vpc_private_subnets=[\"${{ secrets.VPC_PRIVATE_SUBNETS_1 }}\",\"${{ secrets.VPC_PRIVATE_SUBNETS_2 }}\"]"
+  
+    - name: Terraform Apply
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+           cd terraform \
+           && terraform workspace select ${{ inputs.environment }} \
+           && terraform apply \
+           -auto-approve \
+           -var "aws_region=${{ secrets.AWS_REGION }}" \
+           -var "eks_cluster_ec2_instance_type=${{ secrets.EKS_CLUSTER_EC2_INSTANCE_TYPE }}" \
+           -var "eks_vpc_security_group_id=${{ secrets.EKS_VPC_SECURITY_GROUP_ID }}" \
+           -var "node_group_autoscaling_policy_arn=${{ secrets.NODE_GROUP_AUTOSCALING_POLICY_ARN }}" \
+           -var "eks_cluster_name=${{ secrets.EKS_CLUSTER_NAME }}" \
+           -var "vpc_cidr_block=[\"${{ secrets.VPC_CIDR_BLOCK }}\"]" \
+           -var "vpc_id=${{ secrets.VPC_ID }}" \
+           -var "vpc_private_subnets=[\"${{ secrets.VPC_PRIVATE_SUBNETS_1 }}\",\"${{ secrets.VPC_PRIVATE_SUBNETS_2 }}\"]"
